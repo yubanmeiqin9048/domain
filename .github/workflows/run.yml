@@ -1,0 +1,87 @@
+name: Build V2Ray rules dat files
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "**/README.md"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Go 1.x.y
+        uses: actions/setup-go@v2
+        with:
+          go-version: ^1.16
+
+      - name: Set variables
+        run: |
+          echo "RELEASE_NAME=Released on $(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+          echo "TAG_NAME=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+          echo "CHINA_DOMAINS_URL=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf" >> $GITHUB_ENV
+          echo "GEOSITE_CN_URL=https://raw.githubusercontent.com/yuumimi/rules/release/loon/cn.txt" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Checkout the "main" branch of this repo
+        uses: actions/checkout@v3
+        with:
+          ref: main
+
+      - name: Checkout v2fly/domain-list-community
+        uses: actions/checkout@v2.3.4
+        with:
+          repository: v2fly/domain-list-community
+          path: community
+          
+      - name: Get and add direct domains into accelerated-domains.china.txt file
+        run: |
+          curl -sSL -O $CHINA_DOMAINS_URL
+          curl -sSL -O $GEOSITE_CN_URL
+          cat cn.txt | sed '/#/d' | sed '/^\s*$/d' | sed 's@DOMAIN-SUFFIX,@@g;s@DOMAIN,@@g' > ./cn_1.txt
+          cat accelerated-domains.china.conf | sed '/#/d' | sed 's@server=/@@g;s@/114.114.114.114@@g' > ./accelerated-domains.china.txt
+          grep -wf cn_1.txt accelerated-domains.china.txt > common.txt
+          grep -wvf common.txt accelerated-domains.china.txt > ./community/data/accelerated-domains.china.conf
+          cat cn_1.txt accelerated-domains.china.txt > temp-direct.txt
+          sort temp-direct.txt | uniq > ./community/data/accelerated-domains.china.txt
+
+      - name: Build GeoSite
+        run: |
+          cd community || exit 1
+          [ -z "$(cat ./data/accelerated-domains.china.conf | grep 'accelerated-domains.china.conf')" ] && echo ">>geosite cn 添加accelerated-domains.china.conf" && echo "include:accelerated-domains.china.conf" >> ./data/cn
+          go run ./
+
+      - name: Move and zip files and generate sha256 hash
+        run: |
+          install -Dp ./community/dlc.dat ./publish/geosite.dat
+          install -p ./community/data/accelerated-domains.china.txt ./publish/accelerated-domains.china.txt
+          cd ./publish || exit 1
+          zip rules.zip accelerated-domains.china.txt geosite.dat
+          sha256sum geosite.dat > geosite.dat.sha256sum
+          sha256sum rules.zip > rules.zip.sha256sum
+          
+      - name: Release and upload assets
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
+          draft: false
+          prerelease: false
+          files: |
+            ./publish/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Git push assets to "release" branch
+        run: |
+          cd publish || exit 1
+          git init
+          git config --local user.name "actions"
+          git config --local user.email "action@github.com"
+          git checkout -b release
+          git add .
+          git commit -m "${{ env.RELEASE_NAME }}"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f -u origin release
