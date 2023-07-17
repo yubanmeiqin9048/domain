@@ -23,7 +23,6 @@ jobs:
           echo "TAG_NAME=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
           echo "CHINA_DOMAINS_URL=https://raw.githubusercontent.com/felixonmars/dnsmasq-china-list/master/accelerated-domains.china.conf" >> $GITHUB_ENV
           echo "GEOSITE_CN_URL=https://raw.githubusercontent.com/yuumimi/rules/release/loon/cn.txt" >> $GITHUB_ENV
-          echo "GEOSITE_NONCN_URL=https://raw.githubusercontent.com/yuumimi/rules/release/loon/geolocation-!cn.txt" >> $GITHUB_ENV
         shell: bash
 
       - name: Checkout the "main" branch of this repo
@@ -41,9 +40,9 @@ jobs:
         run: |
           curl -sSL -O $CHINA_DOMAINS_URL
           curl -sSL -O $GEOSITE_CN_URL
-          curl -sSL -O GEOSITE_NONCN_URL
+          curl -sSL -O 'https://raw.githubusercontent.com/yuumimi/rules/release/loon/geolocation-!cn.txt'
           cat cn.txt | sed '/#/d' | sed '/^\s*$/d' | sed 's@DOMAIN-SUFFIX,@@g;s@DOMAIN,@@g' > ./cn_1.txt
-          cat !cn.txt | sed '/#/d' | sed '/^\s*$/d' | sed 's@DOMAIN-SUFFIX,@@g;s@DOMAIN,@@g' > ./!cn.txt
+          cat 'geolocation-!cn.txt' | sed '/#/d' | sed '/^\s*$/d' | sed 's@DOMAIN-SUFFIX,@@g;s@DOMAIN,@@g' > ./gfw.txt
           cat accelerated-domains.china.conf | sed '/#/d' | sed 's@server=/@@g;s@/114.114.114.114@@g' > ./accelerated-domains.china.txt
           grep -wf cn_1.txt accelerated-domains.china.txt > common.txt
           grep -wvf common.txt accelerated-domains.china.txt > ./community/data/accelerated-domains.china.conf
@@ -60,7 +59,7 @@ jobs:
         run: |
           install -Dp ./community/dlc.dat ./publish/geosite.dat
           install -p ./community/data/accelerated-domains.china.txt ./publish/accelerated-domains.china.txt
-          install -p ./!cn.txt ./publish/accelerated-domains.gfw.txt
+          install -p ./gfw.txt ./publish/accelerated-domains.gfw.txt
           cd ./publish || exit 1
           zip rules.zip accelerated-domains.china.txt geosite.dat
           sha256sum geosite.dat > geosite.dat.sha256sum
